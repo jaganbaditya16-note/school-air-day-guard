@@ -2,3 +2,6 @@
 samconfig.toml
 node_modules/
 out.json
+
+# Local pre-deployment backups
+*.predeploy.bak

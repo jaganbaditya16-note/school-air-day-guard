@@ -11,7 +11,6 @@ Globals:
     Environment:
       Variables:
         TABLE: !Ref Table
-        TOPIC_ARN: !Ref AlertTopic
 
 Resources:
   Table:
@@ -26,36 +25,12 @@ Resources:
         AttributeName: ttl
         Enabled: true
 
-  AlertTopic:
-    Type: AWS::SNS::Topic
-
   Api:
     Type: AWS::Serverless::HttpApi
     Properties:
       DefaultRouteSettings:
         ThrottlingBurstLimit: 20   # cost + abuse guard
         ThrottlingRateLimit: 10
-
-  IngestFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: src/
-      Handler: ingest.handler
-      Timeout: 60
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref Table }
-        - SNSPublishMessagePolicy: { TopicName: !GetAtt AlertTopic.TopicName }
-      Events:
-        Evening:   # 18:00 IST: refresh + send alerts for tomorrow
-          Type: Schedule
-          Properties:
-            Schedule: cron(30 12 * * ? *)
-            Input: '{"alert": true}'
-        Morning:   # 06:00 IST: refresh only, no alerts
-          Type: Schedule
-          Properties:
-            Schedule: cron(30 0 * * ? *)
-            Input: '{"alert": false}'
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -64,10 +39,6 @@ Resources:
       Handler: api.handler
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
-        - Statement:
-            - Effect: Allow
-              Action: sns:Subscribe
-              Resource: !Ref AlertTopic
       Events:
         Root:
           Type: HttpApi
@@ -79,5 +50,3 @@ Resources:
 Outputs:
   SiteUrl:
     Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/'
-  IngestFunctionName:
-    Value: !Ref IngestFunction
