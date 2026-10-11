@@ -17,7 +17,7 @@ export const CITIES = {
 
 // CPCB-style breakpoints: [conc low, conc high, index low, index high] (ug/m3)
 const PM25 = [[0,30,0,50],[30,60,50,100],[60,90,100,200],[90,120,200,300],[120,250,300,400],[250,380,400,500]];
-const PM10 = [[0,50,0,50],[50,100,50,100],[100,250,100,200],[250,350,200,300],[350,430,300,400],[430,510,400,500]];
+const PM10 = [[0,50,0,50],[50,100,50,100],[100,250,100,200],[250,350,200,300],[350,430,300,400],[430,700,400,500]];
 
 export function subIndex(c, table) {
   if (!Number.isFinite(c) || c < 0) return NaN;
@@ -27,8 +27,13 @@ export function subIndex(c, table) {
   return 500;
 }
 
-export const aqiFrom = (pm25, pm10) =>
-  Math.round(Math.min(500, Math.max(subIndex(pm25, PM25) || 0, subIndex(pm10, PM10) || 0)));
+export const aqiFrom = (pm25, pm10) => {
+  const values = [subIndex(pm25, PM25), subIndex(pm10, PM10)]
+    .filter(Number.isFinite);
+  return values.length
+    ? Math.round(Math.min(500, Math.max(...values)))
+    : NaN;
+};
 
 export function bandOf(aqi) {
   if (aqi <= 50) return 'Good';
@@ -48,27 +53,33 @@ export function levelOf(aqi) {
 
 export const LEVELS = {
   GO: {
-    headline: 'Go ahead: normal outdoor activity',
-    actions: ['Hold assembly, PE and recess outdoors as usual.', 'Keep classroom windows open for fresh air.'],
+    headline: 'Lower forecast risk: review the usual outdoor schedule',
+    actions: [
+      'Consider the usual school outdoor schedule, subject to local guidance.',
+      'Check current conditions and official air-quality alerts before activities.',
+    ],
   },
   CAUTION: {
-    headline: 'Caution: keep strenuous outdoor activity short',
-    actions: ['Keep outdoor PE light and brief.', 'Let children with breathing problems stay indoors.', 'Watch for coughing or wheezing.'],
+    headline: 'Caution: consider reducing strenuous outdoor activity',
+    actions: [
+      'Consider shortening strenuous outdoor sessions.',
+      'Check official air-quality updates and observed conditions during the school day.',
+    ],
   },
   LIMIT: {
-    headline: 'Limit outdoor activity',
+    headline: 'Higher forecast risk: consider moving strenuous activities indoors',
     actions: [
-      'Move PE, sports and assembly indoors.',
-      'Hold recess indoors; keep doors and windows closed at peak hours.',
-      'Children with asthma or allergies should avoid going out. Suggest N95/FFP2 masks for the commute.',
+      'Consider moving strenuous PE, sports and assembly indoors.',
+      'Notify staff of the forecast and follow the school air-quality plan.',
+      'Check local authority guidance before making schedule decisions.',
     ],
   },
   INDOOR: {
-    headline: 'Indoor only',
+    headline: 'Very high forecast risk: review outdoor activities urgently',
     actions: [
-      'No outdoor activity of any kind.',
-      'Keep classes indoors and follow any order from your local education authority.',
-      'Suggest N95/FFP2 masks for the commute and tell parents early.',
+      'Consider postponing outdoor activities while checking current conditions.',
+      'Follow applicable local authority instructions and the school air-quality plan.',
+      'Communicate the forecast and planned precautions to school staff.',
     ],
   },
 };
@@ -78,27 +89,47 @@ const inWindow = (t) => { const h = +t.slice(11, 13); return h >= 8 && h <= 15; 
 export function buildDay(hourly, date, cityName) {
   const idx = hourly.time.map((_, i) => i).filter((i) =>
     hourly.time[i].startsWith(date) && inWindow(hourly.time[i]) &&
-    Number.isFinite(hourly.pm2_5[i]) && Number.isFinite(hourly.pm10[i]));
-  if (idx.length < 4) return null; // not enough data to advise honestly
+    Number.isFinite(hourly.pm2_5[i]) && Number.isFinite(hourly.pm10[i]) &&
+    hourly.pm2_5[i] >= 0 && hourly.pm10[i] >= 0);
+
+  if (idx.length < 4) return null;
 
   const avg = (a) => idx.reduce((s, i) => s + a[i], 0) / idx.length;
-  const pm25 = avg(hourly.pm2_5), pm10 = avg(hourly.pm10);
-  const aqi = aqiFrom(pm25, pm10);
-  const peak = Math.max(...idx.map((i) => aqiFrom(hourly.pm2_5[i], hourly.pm10[i])));
+  const pm25 = avg(hourly.pm2_5);
+  const pm10 = avg(hourly.pm10);
+  const hourlyIndexes = idx.map((i) => aqiFrom(hourly.pm2_5[i], hourly.pm10[i]))
+    .filter(Number.isFinite);
+
+  if (hourlyIndexes.length < 4) return null;
+
+  const peak = Math.max(...hourlyIndexes);
+  const aqi = peak;
   const level = levelOf(aqi);
   const L = LEVELS[level];
   const band = bandOf(aqi);
   const message = [
     `School air advisory: ${cityName}, ${date}`,
-    `School-hours AQI (8am-4pm): ${aqi} (${band}), peak ${peak}`,
+    `School-hours planning index: ${aqi} (${band}); highest hourly value`,
     L.headline,
     ...L.actions.map((a) => `- ${a}`),
-    'Forecast-based advisory, not medical advice.',
+    'Forecast-based planning index, not an official CPCB AQI measurement; not medical advice.',
+    'Check current conditions and applicable local authority guidance.',
   ].join('\n');
-  return { date, aqi, peak, band, level, headline: L.headline, actions: L.actions,
-           pm25: Math.round(pm25), pm10: Math.round(pm10), window: '08:00-16:00', message };
-}
 
+  return {
+    date, aqi, peak, band, level,
+    headline: L.headline,
+    actions: L.actions,
+    pm25: Math.round(pm25),
+    pm10: Math.round(pm10),
+    window: '08:00-16:00',
+    hours: idx.map((i) => ({
+      time: hourly.time[i].slice(11, 16),
+      value: aqiFrom(hourly.pm2_5[i], hourly.pm10[i]),
+    })),
+    message,
+  };
+}
 export async function fetchForecast(key) {
   const c = CITIES[key];
   if (!c) throw new Error('unknown city');

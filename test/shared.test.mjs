@@ -47,3 +47,31 @@ test('message is paste-ready', () => {
   assert.match(d.message, /School air advisory: Delhi, 2026-10-09/);
   assert.match(d.message, /not medical advice/);
 });
+
+test('invalid pollutant readings do not become a zero index', () => {
+  assert.ok(Number.isNaN(aqiFrom(NaN, NaN)));
+  assert.ok(Number.isNaN(aqiFrom(-1, -1)));
+});
+
+test('buildDay uses the highest valid school-hour planning index', () => {
+  const h = mk('2026-10-09', 12, 30);
+  h.pm2_5[7] = 380;  // 07:00: outside the school-hours window
+  h.pm2_5[10] = 150; // 10:00: inside the school-hours window
+
+  const d = buildDay(h, '2026-10-09', 'Delhi');
+  assert.ok(d.aqi > 300);
+  assert.ok(d.aqi < 500);
+  assert.equal(d.aqi, d.peak);
+  assert.equal(d.level, 'INDOOR');
+});
+
+test('buildDay requires at least four valid school-hour readings', () => {
+  const h = mk('2026-10-09', 12, 30);
+  h.pm2_5.fill(null);
+
+  for (const i of [8, 9, 10]) h.pm2_5[i] = 12;
+  assert.equal(buildDay(h, '2026-10-09', 'Pune'), null);
+
+  h.pm2_5[11] = 12;
+  assert.ok(buildDay(h, '2026-10-09', 'Pune'));
+});
