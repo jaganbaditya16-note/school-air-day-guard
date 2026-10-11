@@ -1,0 +1,6 @@
+{
+  "name": "air-day-guard",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.mjs", "preview": "node scripts/preview.mjs" }
+}

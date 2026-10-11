@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>School Air-Day Guard</title>
+<style>
+  :root{--ink:#14212b;--mute:#52606b;--bg:#eaf0f4;--card:#fff;--line:#c9d4dc;
+        --go:#16794a;--caution:#9a6a00;--limit:#b4410a;--indoor:#a61b1b;--lvl:var(--mute)}
+  @media (prefers-color-scheme:dark){:root{--ink:#e8eef2;--mute:#9aaab6;--bg:#0f171d;--card:#17222a;--line:#2a3944;
+        --go:#3fbf82;--caution:#e0a526;--limit:#f0753a;--indoor:#f06a6a}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:560px;margin:0 auto;padding:20px 16px 40px}
+  h1{font-size:1.15rem;margin:0 0 4px;letter-spacing:.01em}
+  .sub{color:var(--mute);margin:0 0 18px;font-size:.92rem}
+  .row{display:flex;gap:8px;margin-bottom:14px}
+  select,input,button{font:inherit;color:inherit;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:10px 12px;min-height:44px}
+  select{flex:1}
+  .seg button{border-radius:0;margin:0;border-right-width:0}
+  .seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0;border-right-width:1px}
+  .seg button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  button{cursor:pointer}
+  :focus-visible{outline:3px solid var(--lvl);outline-offset:2px}
+  .board{background:var(--lvl);color:#fff;border-radius:8px;padding:20px 18px}
+  .board .word{font-size:2.6rem;font-weight:800;line-height:1.05;margin:0}
+  .board .head{margin:6px 0 0;font-size:1.05rem}
+  .board .meta{margin:14px 0 0;font-size:.9rem;opacity:.95}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-top:14px}
+  .card h2{font-size:1rem;margin:0 0 8px}
+  ul{margin:0;padding-left:20px}li{margin:4px 0}
+  .note{color:var(--mute);font-size:.85rem;margin-top:10px}
+  .warn{border-left:4px solid var(--caution);padding-left:10px}
+  .act{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+  input{flex:1;min-width:0}
+  #msg{min-height:1.4em;font-size:.9rem;margin:8px 0 0}
+  @media (prefers-reduced-motion:no-preference){.board{transition:background-color .25s}}
+</style>
+</head>
+<body>
+<main>
+  <h1>School Air-Day Guard</h1>
+  <p class="sub">Is the air safe for outdoor school activity? Forecast for school hours, 8am to 4pm.</p>
+
+  <div class="row">
+    <select id="city" aria-label="City"></select>
+    <div class="seg" role="group" aria-label="Day">
+      <button id="d0" aria-pressed="false">Today</button><button id="d1" aria-pressed="true">Tomorrow</button>
+    </div>
+  </div>
+
+  <section class="board" id="board" aria-live="polite">
+    <p class="word" id="word">Loading</p>
+    <p class="head" id="head">Fetching the forecast.</p>
+    <p class="meta" id="meta"></p>
+  </section>
+
+  <section class="card" id="acts" hidden>
+    <h2>What the school can do</h2>
+    <ul id="list"></ul>
+    <div class="act"><button class="primary" id="copy">Copy message for parent group</button></div>
+    <p id="msg" role="status"></p>
+  </section>
+
+  <section class="card">
+    <h2>Get an email the evening before a bad air day</h2>
+    <div class="row" style="margin:0">
+      <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@school.in" aria-label="Email address">
+      <button id="sub">Subscribe</button>
+    </div>
+    <p id="smsg" role="status" class="note"></p>
+  </section>
+
+  <p class="note warn" id="foot"></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const COLORS = {GO:'--go', CAUTION:'--caution', LIMIT:'--limit', INDOOR:'--indoor'};
+const WORDS = {GO:'Go', CAUTION:'Caution', LIMIT:'Limit', INDOOR:'Indoor only'};
+let cur = null, day = 1;
+
+async function j(url, opts) {
+  const r = await fetch(url, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Something went wrong');
+  return d;
+}
+
+function render() {
+  const date = cur.dates[Math.min(day, cur.dates.length - 1)];
+  const d = cur.days[date];
+  document.documentElement.style.setProperty('--lvl', `var(${COLORS[d.level]})`);
+  $('word').textContent = WORDS[d.level];
+  $('head').textContent = d.headline;
+  $('meta').textContent = `${cur.name}, ${date}. School-hours AQI ${d.aqi} (${d.band}), peak ${d.peak}. PM2.5 ${d.pm25}, PM10 ${d.pm10} \u00b5g/m\u00b3.`;
+  const ul = $('list'); ul.replaceChildren();
+  for (const a of d.actions) { const li = document.createElement('li'); li.textContent = a; ul.append(li); }
+  $('acts').hidden = false;
+  $('d0').setAttribute('aria-pressed', day === 0); $('d1').setAttribute('aria-pressed', day !== 0);
+  $('foot').textContent = (cur.stale ? 'Showing last saved forecast; live data is unavailable. ' : '') +
+    `${cur.source}. Advisory only, not medical advice. Follow orders from your local authority.`;
+}
+
+async function load() {
+  $('word').textContent = 'Loading'; $('head').textContent = 'Fetching the forecast.'; $('acts').hidden = true;
+  try { cur = await j('/api/advisory/' + encodeURIComponent($('city').value)); render(); }
+  catch (e) { $('word').textContent = 'No data'; $('head').textContent = e.message; $('meta').textContent = ''; }
+}
+
+$('city').onchange = load;
+$('d0').onclick = () => { day = 0; if (cur) render(); };
+$('d1').onclick = () => { day = 1; if (cur) render(); };
+$('copy').onclick = async () => {
+  const d = cur.days[cur.dates[Math.min(day, cur.dates.length - 1)]];
+  try { await navigator.clipboard.writeText(d.message); $('msg').textContent = 'Copied. Paste it into WhatsApp.'; }
+  catch { $('msg').textContent = 'Copy failed. Select the advice above and copy it manually.'; }
+};
+$('sub').onclick = async () => {
+  $('smsg').textContent = 'Subscribing...';
+  try {
+    const r = await j('/api/subscribe', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: $('email').value, city: $('city').value})});
+    $('smsg').textContent = r.message;
+  } catch (e) { $('smsg').textContent = e.message; }
+};
+
+(async () => {
+  try {
+    const {cities} = await j('/api/cities');
+    for (const [k, n] of Object.entries(cities)) { const o = document.createElement('option'); o.value = k; o.textContent = n; $('city').append(o); }
+    load();
+  } catch (e) { $('word').textContent = 'Unavailable'; $('head').textContent = e.message; }
+})();
+</script>
+</body>
+</html>
